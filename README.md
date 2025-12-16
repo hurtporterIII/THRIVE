@@ -1,4 +1,4 @@
-Thrive
+THRIVE
 
 After-Tax Financial Intelligence for Real-World Wealth
 
