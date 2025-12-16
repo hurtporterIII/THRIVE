@@ -120,23 +120,3 @@ Emphasizes financial independence over speculation
 🚀 Future Prospects
 
 Thrive is designed to scale into a full financial intelligence layer that helps users understand risk, opportunity, and time-to-freedom—without selling trades, signals, or false confidence.
-
-✅ Submission Checklist (Internal)
-
- Project Title
-
- Short Description
-
- Long Description
-
- Technology & Category Tags
-
- Cover Image
-
- Video Presentation
-
- Slide Presentation
-
- GitHub Repository
-
- Application URL
