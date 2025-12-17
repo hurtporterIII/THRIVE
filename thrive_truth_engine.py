@@ -54,7 +54,7 @@ def _assess_confidence(
 ) -> Tuple[str, List[str]]:
     """Assign a qualitative confidence level and supporting notes."""
 
-    score = 3
+    score = 4
     notes: List[str] = []
 
     if state_rate is None:
@@ -78,6 +78,9 @@ def _assess_confidence(
     elif score == 2:
         level = "MEDIUM"
     else:
+        level = "LOW"
+
+    if position.quantity == 0 or position.current_price == 0:
         level = "LOW"
 
     return level, notes
@@ -137,7 +140,9 @@ def calculate_truth(position: PositionInput) -> Dict[str, object]:
         )
 
     net_liquid_wealth = gross_value - total_tax
-    efficiency_score = (net_liquid_wealth / gross_value * 100.0) if gross_value else 0.0
+    efficiency_score = (
+        net_liquid_wealth / gross_value * 100.0 if gross_value > 0 else 100.0
+    )
 
     tax_classification_countdown = _tax_classification_countdown(position.days_held)
 
