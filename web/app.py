@@ -37,7 +37,6 @@ from execution_engine.planner import ExecutionPlanner, PlanValidationError, Unim
 from wallet_core.keystore import FileKeyStore
 from wallet_core.models import Account
 from wallet_core.signer import PassphraseEncryptor, WalletCore
-from web.ai_adapter import AIAdapterError, get_advice
 
 app = FastAPI(title="Capital OS", description="Local-first web shell")
 
@@ -105,13 +104,6 @@ class ExecuteRequest(BaseModel):
     confirm_all: bool
 
 
-class AdvisorRequest(BaseModel):
-    enabled: bool = False
-    api_key: Optional[str] = None
-    plan: Optional[dict] = None
-    simulation: Optional[dict] = None
-    snapshot: Optional[dict] = None
-
 
 @app.middleware("http")
 async def _local_only(request: Request, call_next):
@@ -129,7 +121,6 @@ async def _handle_errors(request: Request, exc: Exception):
 
 for _exc_class in (
     AdapterError,
-    AIAdapterError,
     ExecutionBlockedError,
     ModeTransitionError,
     PlanValidationError,
@@ -375,22 +366,6 @@ async def execute_plan(payload: ExecuteRequest):
         "mode": _CONTROLLER.mode.value,
         "decisions": [asdict(decision) for decision in decisions],
     }
-
-
-@app.post("/api/advisor")
-async def advisor(payload: AdvisorRequest):
-    if not payload.enabled:
-        return {"status": "disabled", "advice": ""}
-    if not payload.api_key:
-        raise HTTPException(status_code=400, detail="API key required.")
-
-    context = {
-        "plan": payload.plan,
-        "simulation": payload.simulation,
-        "snapshot": payload.snapshot,
-    }
-    advice = get_advice(payload.api_key, context)
-    return {"status": "ok", "advice": advice}
 
 
 def _render_truth_engine_form(result_section: str = "") -> str:
@@ -707,18 +682,6 @@ def _render_dashboard() -> str:
     }
     .empty-state { color: var(--muted); font-size: 0.9rem; }
     .button-row { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: center; }
-    .confidence {
-      display: inline-block;
-      padding: 0.2rem 0.6rem;
-      border-radius: 999px;
-      font-size: 0.8rem;
-      font-weight: 700;
-      background: var(--muted-bg);
-      color: var(--muted);
-    }
-    .confidence.high { background: var(--success-bg); color: var(--success); }
-    .confidence.medium { background: rgba(31, 95, 191, 0.12); color: var(--blue); }
-    .confidence.low { background: var(--danger-bg); color: var(--gold); }
     .phase-title {
       font-size: 0.9rem;
       letter-spacing: 0.12rem;
@@ -832,18 +795,6 @@ def _render_dashboard() -> str:
     <pre id="statusOutput">Set context to begin.</pre>
   </section>
 
-  <section>
-    <h2>AI Settings</h2>
-    <div class="help">Enable the read-only advisor and store the key locally in your browser.</div>
-    <label><input id="aiEnabled" type="checkbox" /> Enable advisor <span class="tooltip" title="Advisor only explains; it never executes or changes anything.">?</span></label>
-    <label>API Key <span class="tooltip" title="Paste your API key to request advisory notes.">?</span>
-      <input id="aiKey" type="password" placeholder="sk-..." />
-    </label>
-    <button onclick="saveAiSettings()">Save</button>
-    <button class="btn-secondary" onclick="clearAiSettings()">Clear</button>
-    <div id="aiSettingsOutput" class="help"></div>
-  </section>
-
   <section class="panel-warn">
     <h2>Wallet Visibility</h2>
     <div class="row">
@@ -925,16 +876,6 @@ def _render_dashboard() -> str:
     </div>
   </section>
 
-  <section>
-    <h2>Advisor (Read-Only)</h2>
-    <div class="help">Advisory commentary only. No actions can be triggered here.</div>
-    <div id="advisorConfidence" class="confidence medium">Confidence: Medium</div>
-    <pre id="advisorOutput">Enable advisor to view notes.</pre>
-    <div class="button-row">
-      <button class="btn-secondary" onclick="copySection('advisorOutput')">Copy</button>
-      <button class="btn-secondary" onclick="downloadSection('advisorOutput', 'advisor.txt')">Download</button>
-    </div>
-  </section>
 
   <section id="executionSection" class="panel-warn execution-muted">
     <div class="phase-title">Act</div>
@@ -998,11 +939,8 @@ def _render_dashboard() -> str:
   </script>
   <script>
     let lastPlan = null;
-    let lastSimulation = null;
     let contextReady = false;
     let lastStatus = null;
-    const AI_ENABLED_KEY = 'capitalos-ai-enabled';
-    const AI_KEY_KEY = 'capitalos-ai-key';
 
     function readContext() {
       return {
@@ -1039,13 +977,6 @@ def _render_dashboard() -> str:
       document.getElementById(elementId).textContent = JSON.stringify(data, null, 2);
     }
 
-    function renderText(elementId, message) {
-      const element = document.getElementById(elementId);
-      if (element) {
-        element.textContent = message;
-      }
-    }
-
     function copySection(elementId) {
       const element = document.getElementById(elementId);
       if (!element) return;
@@ -1079,124 +1010,6 @@ def _render_dashboard() -> str:
       link.click();
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
-    }
-
-    function setAdvisorConfidence(text) {
-      const label = document.getElementById('advisorConfidence');
-      if (!label) return;
-      const message = text || '';
-      const lower = message.toLowerCase();
-      const uncertain = ['uncertain', 'unsure', 'maybe', 'might', 'unknown', 'guess', 'speculate', 'cannot', "can't"];
-      let level = 'medium';
-      if (!message || message.startsWith('Advisor disabled') || message.startsWith('API key') || message.startsWith('Advisor unavailable')) {
-        level = 'low';
-      } else if (uncertain.some(token => lower.includes(token))) {
-        level = 'low';
-      } else if (lower.includes('assumption') || lower.includes('assume')) {
-        level = 'medium';
-      } else if (message.length > 500) {
-        level = 'high';
-      }
-      label.classList.remove('high', 'medium', 'low');
-      label.classList.add(level);
-      label.textContent = 'Confidence: ' + (level === 'high' ? 'High' : level === 'low' ? 'Low' : 'Medium');
-    }
-
-    function loadAiSettings() {
-      const enabledToggle = document.getElementById('aiEnabled');
-      const keyInput = document.getElementById('aiKey');
-      if (!enabledToggle || !keyInput) {
-        return;
-      }
-      try {
-        const enabled = localStorage.getItem(AI_ENABLED_KEY);
-        if (enabled === 'true') {
-          enabledToggle.checked = true;
-        }
-        const savedKey = localStorage.getItem(AI_KEY_KEY);
-        if (savedKey) {
-          keyInput.value = savedKey;
-        }
-      } catch (err) {}
-      updateAdvisor();
-    }
-
-    function saveAiSettings() {
-      const enabledToggle = document.getElementById('aiEnabled');
-      const keyInput = document.getElementById('aiKey');
-      if (!enabledToggle || !keyInput) {
-        return;
-      }
-      try {
-        localStorage.setItem(AI_ENABLED_KEY, enabledToggle.checked ? 'true' : 'false');
-        localStorage.setItem(AI_KEY_KEY, keyInput.value);
-      } catch (err) {}
-      renderText('aiSettingsOutput', 'Saved.');
-      updateAdvisor();
-    }
-
-    function clearAiSettings() {
-      const enabledToggle = document.getElementById('aiEnabled');
-      const keyInput = document.getElementById('aiKey');
-      if (enabledToggle) {
-        enabledToggle.checked = false;
-      }
-      if (keyInput) {
-        keyInput.value = '';
-      }
-      try {
-        localStorage.removeItem(AI_ENABLED_KEY);
-        localStorage.removeItem(AI_KEY_KEY);
-      } catch (err) {}
-      renderText('aiSettingsOutput', 'Cleared.');
-      updateAdvisor();
-    }
-
-    function buildSnapshot() {
-      const snapshotId = document.getElementById('snapshotId');
-      const exposures = document.getElementById('exposures');
-      if (!snapshotId || !exposures) {
-        return null;
-      }
-      return {
-        snapshot_id: snapshotId.value,
-        exposures: parseExposures(),
-      };
-    }
-
-    async function updateAdvisor() {
-      const output = document.getElementById('advisorOutput');
-      const enabledToggle = document.getElementById('aiEnabled');
-      const keyInput = document.getElementById('aiKey');
-      if (!output || !enabledToggle || !keyInput) {
-        return;
-      }
-      if (!enabledToggle.checked) {
-        output.textContent = 'Advisor disabled.';
-        setAdvisorConfidence(output.textContent);
-        return;
-      }
-      if (!keyInput.value) {
-        output.textContent = 'API key required for advisory output.';
-        setAdvisorConfidence(output.textContent);
-        return;
-      }
-      output.textContent = 'Loading advisor...';
-      setAdvisorConfidence(output.textContent);
-      try {
-        const data = await apiPost('/api/advisor', {
-          enabled: enabledToggle.checked,
-          api_key: keyInput.value,
-          plan: lastPlan,
-          simulation: lastSimulation,
-          snapshot: buildSnapshot(),
-        });
-        output.textContent = data.advice || 'No advisory response.';
-        setAdvisorConfidence(output.textContent);
-      } catch (err) {
-        output.textContent = (err && err.error) ? err.error : 'Advisor unavailable.';
-        setAdvisorConfidence(output.textContent);
-      }
     }
 
     async function setContext() {
@@ -1301,7 +1114,6 @@ def _render_dashboard() -> str:
         const data = await apiPost('/api/plans', payload);
         lastPlan = data;
         renderOutput('planOutput', data);
-        updateAdvisor();
       } catch (err) {
         renderOutput('planOutput', err);
       }
@@ -1314,9 +1126,7 @@ def _render_dashboard() -> str:
       }
       try {
         const data = await apiPost('/api/simulate', { plan: lastPlan });
-        lastSimulation = data;
         renderOutput('simulateOutput', data);
-        updateAdvisor();
       } catch (err) {
         renderOutput('simulateOutput', err);
       }
@@ -1472,17 +1282,12 @@ def _render_dashboard() -> str:
       const confirmAll = document.getElementById('confirmAll');
       const execMode = document.getElementById('execMode');
       const armed = document.getElementById('armed');
-      const aiEnabled = document.getElementById('aiEnabled');
-      const aiKey = document.getElementById('aiKey');
       if (actionType) actionType.addEventListener('change', updatePlanFields);
       if (confirmAll) confirmAll.addEventListener('change', updateExecutionState);
       if (execMode) execMode.addEventListener('change', updateExecutionState);
       if (armed) armed.addEventListener('change', updateExecutionState);
-      if (aiEnabled) aiEnabled.addEventListener('change', updateAdvisor);
-      if (aiKey) aiKey.addEventListener('input', updateAdvisor);
       updatePlanFields();
       updateExecutionState();
-      loadAiSettings();
     }
 
     bindUI();

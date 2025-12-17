@@ -74,31 +74,6 @@ class WebBreakItTests(unittest.TestCase):
             )
             self.assertIn(response.status_code, (400, 403))
 
-    def test_ai_without_key(self) -> None:
-        client = TestClient(app)
-        response = client.post(
-            "/api/advisor",
-            json={"enabled": False, "api_key": "", "plan": None, "simulation": None, "snapshot": None},
-        )
-        self.assertEqual(response.status_code, 200)
-        self.assertIn("disabled", response.text.lower())
-
-    def test_ai_secret_stripping(self) -> None:
-        from web.ai_adapter import sanitize_context
-
-        ctx = {
-            "seed": "secret",
-            "passphrase": "secret",
-            "private_key": "secret",
-            "plan": {"action": "HOLD"},
-        }
-
-        sanitized = sanitize_context(ctx)
-
-        self.assertNotIn("seed", sanitized)
-        self.assertNotIn("passphrase", sanitized)
-        self.assertNotIn("private_key", sanitized)
-
     def test_execute_requires_arm(self) -> None:
         client = TestClient(app)
         plan_response = client.post(
