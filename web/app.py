@@ -551,6 +551,9 @@ def _render_dashboard() -> str:
       --input-bg: #ffffff;
       --input-border: #b8c0cc;
       --danger-bg: rgba(194, 138, 16, 0.1);
+      --success: #2b7a37;
+      --success-bg: rgba(43, 122, 55, 0.12);
+      --muted-bg: rgba(89, 98, 115, 0.08);
     }
     [data-theme="night"] {
       --bg: #0b1118;
@@ -563,6 +566,9 @@ def _render_dashboard() -> str:
       --input-bg: #0f1722;
       --input-border: #2a3340;
       --danger-bg: rgba(243, 180, 63, 0.15);
+      --success: #8ce3a1;
+      --success-bg: rgba(140, 227, 161, 0.12);
+      --muted-bg: rgba(165, 176, 194, 0.1);
     }
     * { box-sizing: border-box; }
     body {
@@ -613,6 +619,7 @@ def _render_dashboard() -> str:
     }
     button:hover { opacity: 0.92; }
     .btn-secondary { background: transparent; color: var(--blue); border: 1px solid var(--blue); }
+    .btn-link { background: transparent; color: var(--blue); border: none; padding: 0; margin: 0; }
     .btn-warn { background: var(--gold); color: #1c1302; }
     pre { background: rgba(0, 0, 0, 0.04); padding: 0.75rem; white-space: pre-wrap; border-radius: 8px; }
     .row { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
@@ -628,6 +635,51 @@ def _render_dashboard() -> str:
     .toggle input { width: auto; }
     .toolbar { display: flex; align-items: center; gap: 1rem; }
     .noscript { color: var(--gold); font-weight: 600; }
+    .step {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1rem 1.25rem;
+      margin-bottom: 1rem;
+      background: var(--panel);
+    }
+    .step-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 1rem;
+    }
+    .step-title { font-size: 1.1rem; font-weight: 700; margin: 0; }
+    .step-status {
+      font-size: 0.85rem;
+      padding: 0.25rem 0.6rem;
+      border-radius: 999px;
+      background: var(--muted-bg);
+      color: var(--muted);
+    }
+    .step.is-complete .step-status {
+      background: var(--success-bg);
+      color: var(--success);
+    }
+    .step.is-current { border-color: var(--blue); box-shadow: 0 0 0 2px rgba(31, 95, 191, 0.15); }
+    .step-body { margin-top: 0.75rem; }
+    .step.is-collapsed .step-body { display: none; }
+    .field.is-hidden { display: none; }
+    .help { color: var(--muted); font-size: 0.85rem; margin-top: 0.2rem; }
+    .phase-title {
+      font-size: 0.9rem;
+      letter-spacing: 0.12rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      font-weight: 700;
+      margin-bottom: 0.75rem;
+    }
+    .phase-grid { display: grid; gap: 1rem; }
+    .phase-card { padding: 1rem; border-radius: 12px; border: 1px solid var(--border); background: var(--panel); }
+    .advanced-fields { margin-top: 0.75rem; }
+    .js .advanced-fields { display: none; }
+    .js .show-advanced .advanced-fields { display: block; }
+    .execution-muted { opacity: 0.65; filter: grayscale(0.25); }
+    .execution-muted .btn-warn { opacity: 0.7; }
     @media (max-width: 860px) {
       .row { grid-template-columns: 1fr; }
       header { flex-direction: column; align-items: flex-start; }
@@ -639,7 +691,7 @@ def _render_dashboard() -> str:
   <header>
     <div>
       <h1>Capital OS Web Shell</h1>
-      <p>Local-only adapter for wallet visibility, planning, simulation, and execution gating.</p>
+      <p>Guided operator flow for local planning, simulation, and execution gating.</p>
     </div>
     <div class="toolbar">
       <label class="toggle">
@@ -652,11 +704,62 @@ def _render_dashboard() -> str:
   <noscript><p class="noscript">JavaScript is off. Live actions are unavailable in this shell.</p></noscript>
 
   <section>
-    <h2>Context</h2>
-    <label>Keystore Path <input id="keystorePath" placeholder="/path/to/keystore.json" /></label>
-    <label>Wallet ID <input id="walletId" placeholder="wallet id" /></label>
-    <button onclick="setContext()">Set Context</button>
-    <div id="contextResult"></div>
+    <h2>Startup Flow</h2>
+    <div id="step-context" class="step">
+      <div class="step-header">
+        <div>
+          <div class="step-title">Step 1: Set Context</div>
+          <div class="help">Point to the keystore and wallet you want to operate.</div>
+        </div>
+        <div>
+          <span id="contextStatus" class="step-status">Not set</span>
+          <button type="button" class="btn-link" onclick="toggleStep('step-context')">Edit</button>
+        </div>
+      </div>
+      <div class="step-body">
+        <label>Keystore Path <input id="keystorePath" placeholder="/path/to/keystore.json" /></label>
+        <label>Wallet ID <input id="walletId" placeholder="wallet id" /></label>
+        <button onclick="setContext()">Set Context</button>
+        <div id="contextResult"></div>
+      </div>
+    </div>
+
+    <div id="step-unlock" class="step">
+      <div class="step-header">
+        <div>
+          <div class="step-title">Step 2: Unlock Wallet</div>
+          <div class="help">Unlock only for the duration of your review.</div>
+        </div>
+        <div>
+          <span id="unlockStatus" class="step-status">Locked</span>
+          <button type="button" class="btn-link" onclick="toggleStep('step-unlock')">Edit</button>
+        </div>
+      </div>
+      <div class="step-body">
+        <label>Passphrase <input id="unlockPassphrase" type="password" /></label>
+        <button onclick="unlockWallet()">Unlock</button>
+        <button class="btn-secondary" onclick="lockWallet()">Lock</button>
+      </div>
+    </div>
+
+    <div id="step-account" class="step">
+      <div class="step-header">
+        <div>
+          <div class="step-title">Step 3: Select Account</div>
+          <div class="help">Choose the active account used for addresses and signatures.</div>
+        </div>
+        <div>
+          <span id="accountStatus" class="step-status">Not selected</span>
+          <button type="button" class="btn-link" onclick="toggleStep('step-account')">Edit</button>
+        </div>
+      </div>
+      <div class="step-body">
+        <button onclick="loadAccounts()">Load Accounts</button>
+        <label>Account ID <input id="accountId" /></label>
+        <button onclick="selectAccount()">Set Active Account</button>
+        <pre id="accountsOutput"></pre>
+      </div>
+    </div>
   </section>
 
   <section>
@@ -666,63 +769,82 @@ def _render_dashboard() -> str:
   </section>
 
   <section class="panel-warn">
-    <h2>Wallet</h2>
+    <h2>Wallet Visibility</h2>
     <div class="row">
-      <div>
-        <label>Passphrase <input id="unlockPassphrase" type="password" /></label>
-        <button onclick="unlockWallet()">Unlock</button>
-        <button class="btn-secondary" onclick="lockWallet()">Lock</button>
-      </div>
       <div>
         <label>Seed Export Passphrase <input id="seedPassphrase" type="password" /></label>
         <label><input id="seedAck" type="checkbox" /> I understand this exposes my funds.</label>
         <button class="btn-warn" onclick="exportSeed()">Export Seed</button>
         <div class="warn">Anyone with this phrase controls your funds.</div>
       </div>
+      <div>
+        <div class="help">Seed export is explicit and never cached.</div>
+      </div>
     </div>
     <pre id="walletOutput"></pre>
   </section>
 
   <section>
-    <h2>Accounts</h2>
-    <button onclick="loadAccounts()">Load Accounts</button>
-    <label>Account ID <input id="accountId" /></label>
-    <button onclick="selectAccount()">Set Active Account</button>
-    <pre id="accountsOutput"></pre>
-  </section>
-
-  <section>
-    <h2>Plans</h2>
-    <label>Snapshot ID <input id="snapshotId" value="snapshot-1" /></label>
-    <label>Exposures (one per line: ASSET:quantity)
-      <textarea id="exposures" rows="4">USD:1000</textarea>
-    </label>
-    <div class="row">
-      <label>Action Type
+    <div class="phase-title">Think</div>
+    <div class="phase-grid">
+      <div class="phase-card" id="planSection">
+        <h2>Plan</h2>
+        <label>What do you want to do?</label>
         <select id="actionType">
           <option>HOLD</option>
           <option>SWAP</option>
           <option>TRANSFER</option>
         </select>
-      </label>
-      <label>Amount <input id="intentAmount" type="number" step="any" value="100" /></label>
+        <div class="help">Choose the intent for this plan. The form adapts based on action.</div>
+
+        <div class="row">
+          <div class="field" data-actions="HOLD SWAP TRANSFER">
+            <label><span id="fromAssetLabel">From Asset</span> <input id="fromAsset" value="USD" /></label>
+            <div class="help">Asset to use as the source.</div>
+          </div>
+          <div class="field" data-actions="SWAP TRANSFER" id="toAssetField">
+            <label>To Asset <input id="toAsset" value="USD" /></label>
+            <div class="help">Destination asset for swap or transfer.</div>
+          </div>
+        </div>
+
+        <div class="field" data-actions="HOLD SWAP TRANSFER">
+          <label>Amount <input id="intentAmount" type="number" step="any" value="100" /></label>
+          <div class="help">Quantity to plan for.</div>
+        </div>
+
+        <button type="button" class="btn-secondary" onclick="toggleAdvanced()">Advanced</button>
+        <div class="advanced-fields">
+          <label>Snapshot ID <input id="snapshotId" value="snapshot-1" /></label>
+          <div class="help">Capital snapshot identifier.</div>
+          <label>Exposures (one per line: ASSET:quantity)
+            <textarea id="exposures" rows="4">USD:1000</textarea>
+          </label>
+          <div class="help">Define the capital snapshot used for planning.</div>
+        </div>
+
+        <button onclick="createPlan()">Create Plan</button>
+        <pre id="planOutput"></pre>
+      </div>
+
+      <div class="phase-card">
+        <h2>Simulate</h2>
+        <div class="help">Dry-run the most recent plan before deciding.</div>
+        <button onclick="simulatePlan()">Simulate Last Plan</button>
+      </div>
     </div>
-    <div class="row">
-      <label>From Asset <input id="fromAsset" value="USD" /></label>
-      <label>To Asset <input id="toAsset" value="USD" /></label>
-    </div>
-    <button onclick="createPlan()">Create Plan</button>
-    <pre id="planOutput"></pre>
   </section>
 
   <section>
-    <h2>Simulate</h2>
-    <button onclick="simulatePlan()">Simulate Last Plan</button>
+    <div class="phase-title">Review</div>
+    <h2>Simulation Results</h2>
     <pre id="simulateOutput"></pre>
   </section>
 
-  <section class="panel-warn">
+  <section id="executionSection" class="panel-warn execution-muted">
+    <div class="phase-title">Act</div>
     <h2>Execution</h2>
+    <div class="help">Execution remains gated until mode, arm, and confirmation are all set.</div>
     <div class="row">
       <label>Mode
         <select id="execMode">
@@ -769,6 +891,7 @@ def _render_dashboard() -> str:
         if (stored) theme = stored;
       } catch (err) {}
       apply(theme);
+      if (body) body.classList.add('js');
       if (toggle) {
         toggle.onchange = function() {
           var next = toggle.checked ? 'night' : 'day';
@@ -780,6 +903,8 @@ def _render_dashboard() -> str:
   </script>
   <script>
     let lastPlan = null;
+    let contextReady = false;
+    let lastStatus = null;
 
     function readContext() {
       return {
@@ -819,6 +944,7 @@ def _render_dashboard() -> str:
     async function setContext() {
       try {
         const data = await apiPost('/api/context', readContext());
+        contextReady = true;
         renderOutput('contextResult', data);
         await refreshStatus();
       } catch (err) {
@@ -829,7 +955,9 @@ def _render_dashboard() -> str:
     async function refreshStatus() {
       try {
         const data = await apiGet('/api/status');
+        lastStatus = data;
         renderOutput('statusOutput', data);
+        updateStepDisplay(data);
       } catch (err) {
         renderOutput('statusOutput', err);
       }
@@ -892,7 +1020,8 @@ def _render_dashboard() -> str:
 
     function parseExposures() {
       const raw = document.getElementById('exposures').value;
-      const lines = raw.split('\n').map(line => line.trim()).filter(Boolean);
+      const lines = raw.split('
+').map(line => line.trim()).filter(Boolean);
       return lines.map(line => {
         const parts = line.split(':');
         return { asset_code: parts[0].trim(), quantity: Number(parts[1]) };
@@ -942,6 +1071,7 @@ def _render_dashboard() -> str:
           allowed_assets: allowedAssets ? allowedAssets.split(',').map(item => item.trim()).filter(Boolean) : null,
         });
         renderOutput('executeOutput', data);
+        updateExecutionState();
         await refreshStatus();
       } catch (err) {
         renderOutput('executeOutput', err);
@@ -954,6 +1084,7 @@ def _render_dashboard() -> str:
           armed: document.getElementById('armed').checked,
         });
         renderOutput('executeOutput', data);
+        updateExecutionState();
         await refreshStatus();
       } catch (err) {
         renderOutput('executeOutput', err);
@@ -975,6 +1106,120 @@ def _render_dashboard() -> str:
         renderOutput('executeOutput', err);
       }
     }
+
+    function toggleStep(stepId) {
+      const step = document.getElementById(stepId);
+      if (!step) return;
+      const collapsed = step.classList.contains('is-collapsed');
+      if (collapsed) {
+        step.classList.remove('is-collapsed');
+        step.dataset.userOpen = 'true';
+      } else {
+        step.classList.add('is-collapsed');
+        step.dataset.userOpen = 'false';
+      }
+    }
+
+    function updateStepDisplay(status) {
+      const contextDone = contextReady;
+      const unlocked = status && status.wallet_state === 'UNLOCKED';
+      const accountDone = status && status.active_account_id;
+      setStepState('step-context', contextDone, contextDone ? 'Complete ✓' : 'Not set');
+      setStepState('step-unlock', unlocked, unlocked ? 'Unlocked ✓' : 'Locked');
+      setStepState('step-account', !!accountDone, accountDone ? 'Selected ✓' : 'Not selected');
+      setCurrentStep([contextDone, unlocked, !!accountDone]);
+    }
+
+    function setStepState(stepId, complete, label) {
+      const step = document.getElementById(stepId);
+      const status = document.getElementById(stepId === 'step-context' ? 'contextStatus'
+        : stepId === 'step-unlock' ? 'unlockStatus'
+        : 'accountStatus');
+      if (!step || !status) return;
+      status.textContent = label;
+      if (complete) {
+        step.classList.add('is-complete');
+        if (step.dataset.userOpen !== 'true') {
+          step.classList.add('is-collapsed');
+        }
+      } else {
+        step.classList.remove('is-complete');
+        step.classList.remove('is-collapsed');
+      }
+    }
+
+    function setCurrentStep(completions) {
+      const steps = ['step-context', 'step-unlock', 'step-account'];
+      steps.forEach(id => {
+        const step = document.getElementById(id);
+        if (step) step.classList.remove('is-current');
+      });
+      for (let index = 0; index < steps.length; index += 1) {
+        if (!completions[index]) {
+          const step = document.getElementById(steps[index]);
+          if (step) step.classList.add('is-current');
+          break;
+        }
+      }
+    }
+
+    function toggleAdvanced() {
+      const planSection = document.getElementById('planSection');
+      if (!planSection) return;
+      planSection.classList.toggle('show-advanced');
+    }
+
+    function updatePlanFields() {
+      const action = document.getElementById('actionType').value;
+      const fields = document.querySelectorAll('#planSection .field');
+      fields.forEach(field => {
+        const actions = (field.getAttribute('data-actions') || '').split(' ');
+        if (actions.includes(action)) {
+          field.classList.remove('is-hidden');
+        } else {
+          field.classList.add('is-hidden');
+        }
+      });
+      const fromLabel = document.getElementById('fromAssetLabel');
+      const fromAsset = document.getElementById('fromAsset');
+      const toAsset = document.getElementById('toAsset');
+      if (action === 'HOLD') {
+        if (fromLabel) fromLabel.textContent = 'Asset';
+        if (toAsset && fromAsset) toAsset.value = fromAsset.value;
+      } else {
+        if (fromLabel) fromLabel.textContent = 'From Asset';
+      }
+    }
+
+    function updateExecutionState() {
+      const mode = document.getElementById('execMode').value;
+      const armed = document.getElementById('armed').checked;
+      const confirmed = document.getElementById('confirmAll').checked;
+      const ready = mode !== 'SAFE' && armed && confirmed;
+      const section = document.getElementById('executionSection');
+      if (section) {
+        if (ready) {
+          section.classList.remove('execution-muted');
+        } else {
+          section.classList.add('execution-muted');
+        }
+      }
+    }
+
+    function bindUI() {
+      const actionType = document.getElementById('actionType');
+      const confirmAll = document.getElementById('confirmAll');
+      const execMode = document.getElementById('execMode');
+      const armed = document.getElementById('armed');
+      if (actionType) actionType.addEventListener('change', updatePlanFields);
+      if (confirmAll) confirmAll.addEventListener('change', updateExecutionState);
+      if (execMode) execMode.addEventListener('change', updateExecutionState);
+      if (armed) armed.addEventListener('change', updateExecutionState);
+      updatePlanFields();
+      updateExecutionState();
+    }
+
+    bindUI();
   </script>
 </body>
 </html>"""
