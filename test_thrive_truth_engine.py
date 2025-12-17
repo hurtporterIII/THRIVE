@@ -2,7 +2,7 @@
 
 import unittest
 
-from thrive_truth_engine import PositionInput, calculate_truth
+from thrive.truth_engine import PositionInput, calculate_truth
 
 
 class ThriveTruthEngineTests(unittest.TestCase):

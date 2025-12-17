@@ -169,6 +169,8 @@ def calculate_truth(position: PositionInput) -> Dict[str, object]:
 
     return result
 
+calculate_true_wealth = calculate_truth
+
 
 def _format_currency(value: float) -> str:
     """Format a float as currency for console output."""
