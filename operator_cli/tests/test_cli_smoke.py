@@ -41,6 +41,13 @@ class OperatorCliSmokeTests(unittest.TestCase):
         payload = json.loads(output)
         self.assertEqual(payload["intent"]["action_type"], "SWAP")
 
+    def test_dashboard_runs_without_flags(self) -> None:
+        buf = StringIO("8\n")
+        with _redirect_stdin(buf):
+            code, output = self._run([])
+        self.assertEqual(code, 0)
+        self.assertIn("Capital OS", output)
+
     def test_execute_manual_yes(self) -> None:
         plan_code, plan_output = self._run(
             [

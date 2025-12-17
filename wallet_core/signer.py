@@ -165,6 +165,10 @@ class WalletCore:
         private_key = _derive_private_key(seed, derivation_path)
         return hmac.new(private_key, payload, hashlib.sha256).hexdigest()
 
+    def export_recovery_phrase(self, wallet_id: str) -> str:
+        seed = self._require_unlocked(wallet_id)
+        return _seed_to_phrase(seed)
+
     def _require_unlocked(self, wallet_id: str) -> bytes:
         if self._unlocked_seed is None or self._unlocked_wallet_id != wallet_id:
             raise RuntimeError("Wallet is locked.")
@@ -197,3 +201,9 @@ def _derive_private_key(seed: bytes, path: str) -> bytes:
 
 def _derive_public_key(private_key: bytes) -> str:
     return hashlib.sha256(private_key).hexdigest()
+
+
+def _seed_to_phrase(seed: bytes) -> str:
+    hex_value = seed.hex()
+    chunks = [hex_value[index : index + 8] for index in range(0, len(hex_value), 8)]
+    return " ".join(chunks)

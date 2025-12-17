@@ -95,6 +95,40 @@ class WalletCoreTests(unittest.TestCase):
         sig_two = wallet.sign(metadata.wallet_id, "m/44'/0'/1'/0/0", b"payload")
         self.assertNotEqual(sig_one, sig_two)
 
+    def test_seed_export_fails_when_locked(self) -> None:
+        seed = b"\x06" * 32
+        wallet, _, metadata = self._make_wallet(seed)
+        with self.assertRaises(RuntimeError):
+            wallet.export_recovery_phrase(metadata.wallet_id)
+
+    def test_seed_export_succeeds_when_unlocked(self) -> None:
+        seed = b"\x07" * 32
+        wallet, keystore, metadata = self._make_wallet(seed)
+        wallet.unlock(metadata.wallet_id, "pass")
+        phrase = wallet.export_recovery_phrase(metadata.wallet_id)
+        self.assertIsInstance(phrase, str)
+        self.assertTrue(phrase)
+
+        record_json = json.dumps(keystore.load(metadata.wallet_id).to_dict())
+        self.assertNotIn(phrase, record_json)
+
+    def test_seed_export_is_deterministic(self) -> None:
+        seed = b"\x08" * 32
+        wallet, _, metadata = self._make_wallet(seed)
+        wallet.unlock(metadata.wallet_id, "pass")
+        phrase_one = wallet.export_recovery_phrase(metadata.wallet_id)
+        phrase_two = wallet.export_recovery_phrase(metadata.wallet_id)
+        self.assertEqual(phrase_one, phrase_two)
+
+    def test_seed_export_does_not_mutate_state(self) -> None:
+        seed = b"\x09" * 32
+        wallet, keystore, metadata = self._make_wallet(seed)
+        record_before = keystore.load(metadata.wallet_id).to_dict()
+        wallet.unlock(metadata.wallet_id, "pass")
+        _ = wallet.export_recovery_phrase(metadata.wallet_id)
+        record_after = keystore.load(metadata.wallet_id).to_dict()
+        self.assertEqual(record_before, record_after)
+
 
 if __name__ == "__main__":
     unittest.main()
