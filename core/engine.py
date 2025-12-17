@@ -106,6 +106,15 @@ def calculate_truth(position: PositionInput) -> TruthResult:
             "No state tax applied because state_tax_rate was not provided."
         )
     else:
+        # Normalize state_rate to float
+        if state_rate is not None:
+            if isinstance(state_rate, str):
+                s = state_rate.strip()
+                if s.endswith("%"):
+                    state_rate = float(s.rstrip("%")) / 100.0
+                else:
+                    state_rate = float(s)
+
         assumptions.append(f"State tax rate applied at {state_rate:.2%} on positive gains.")
 
     if total_gain > 0:

@@ -72,7 +72,9 @@ def _run_async(awaitable):
     except ImportError as exc:  # pragma: no cover
         raise RuntimeError("Asyncio is required for adapter tests.") from exc
 
-    return asyncio.run(awaitable)
+    if asyncio.iscoroutine(awaitable):
+        return asyncio.run(awaitable)
+    return awaitable
 
 
 if __name__ == "__main__":
