@@ -37,6 +37,7 @@ from execution_engine.planner import ExecutionPlanner, PlanValidationError, Unim
 from wallet_core.keystore import FileKeyStore
 from wallet_core.models import Account
 from wallet_core.signer import PassphraseEncryptor, WalletCore
+from web.ai_adapter import AIAdapterError, get_advice
 
 app = FastAPI(title="Capital OS", description="Local-first web shell")
 
@@ -104,6 +105,14 @@ class ExecuteRequest(BaseModel):
     confirm_all: bool
 
 
+class AdvisorRequest(BaseModel):
+    enabled: bool = False
+    api_key: Optional[str] = None
+    plan: Optional[dict] = None
+    simulation: Optional[dict] = None
+    snapshot: Optional[dict] = None
+
+
 @app.middleware("http")
 async def _local_only(request: Request, call_next):
     client = request.client
@@ -120,6 +129,7 @@ async def _handle_errors(request: Request, exc: Exception):
 
 for _exc_class in (
     AdapterError,
+    AIAdapterError,
     ExecutionBlockedError,
     ModeTransitionError,
     PlanValidationError,
@@ -365,6 +375,22 @@ async def execute_plan(payload: ExecuteRequest):
         "mode": _CONTROLLER.mode.value,
         "decisions": [asdict(decision) for decision in decisions],
     }
+
+
+@app.post("/api/advisor")
+async def advisor(payload: AdvisorRequest):
+    if not payload.enabled:
+        return {"status": "disabled", "advice": ""}
+    if not payload.api_key:
+        raise HTTPException(status_code=400, detail="API key required.")
+
+    context = {
+        "plan": payload.plan,
+        "simulation": payload.simulation,
+        "snapshot": payload.snapshot,
+    }
+    advice = get_advice(payload.api_key, context)
+    return {"status": "ok", "advice": advice}
 
 
 def _render_truth_engine_form(result_section: str = "") -> str:
@@ -665,6 +691,34 @@ def _render_dashboard() -> str:
     .step.is-collapsed .step-body { display: none; }
     .field.is-hidden { display: none; }
     .help { color: var(--muted); font-size: 0.85rem; margin-top: 0.2rem; }
+    .tooltip {
+      display: inline-block;
+      margin-left: 0.35rem;
+      width: 1.1rem;
+      height: 1.1rem;
+      border-radius: 50%;
+      background: var(--muted-bg);
+      color: var(--muted);
+      text-align: center;
+      font-size: 0.8rem;
+      line-height: 1.1rem;
+      font-weight: 700;
+      cursor: help;
+    }
+    .empty-state { color: var(--muted); font-size: 0.9rem; }
+    .button-row { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: center; }
+    .confidence {
+      display: inline-block;
+      padding: 0.2rem 0.6rem;
+      border-radius: 999px;
+      font-size: 0.8rem;
+      font-weight: 700;
+      background: var(--muted-bg);
+      color: var(--muted);
+    }
+    .confidence.high { background: var(--success-bg); color: var(--success); }
+    .confidence.medium { background: rgba(31, 95, 191, 0.12); color: var(--blue); }
+    .confidence.low { background: var(--danger-bg); color: var(--gold); }
     .phase-title {
       font-size: 0.9rem;
       letter-spacing: 0.12rem;
@@ -717,8 +771,14 @@ def _render_dashboard() -> str:
         </div>
       </div>
       <div class="step-body">
-        <label>Keystore Path <input id="keystorePath" placeholder="/path/to/keystore.json" /></label>
-        <label>Wallet ID <input id="walletId" placeholder="wallet id" /></label>
+        <label>Keystore Path <span class="tooltip" title="Local file path where your wallet data is stored.">?</span>
+          <input id="keystorePath" placeholder="/path/to/keystore.json" />
+        </label>
+        <div class="help">Use the path to your keystore file on this machine.</div>
+        <label>Wallet ID <span class="tooltip" title="The unique identifier for your wallet.">?</span>
+          <input id="walletId" placeholder="wallet id" />
+        </label>
+        <div class="help">Copy the wallet ID from your setup output.</div>
         <button onclick="setContext()">Set Context</button>
         <div id="contextResult"></div>
       </div>
@@ -757,15 +817,31 @@ def _render_dashboard() -> str:
         <button onclick="loadAccounts()">Load Accounts</button>
         <label>Account ID <input id="accountId" /></label>
         <button onclick="selectAccount()">Set Active Account</button>
-        <pre id="accountsOutput"></pre>
+        <pre id="accountsOutput">Load accounts to choose an active account.</pre>
       </div>
     </div>
   </section>
 
   <section>
     <h2>Status</h2>
-    <button onclick="refreshStatus()">Refresh</button>
-    <pre id="statusOutput">{}</pre>
+    <div class="button-row">
+      <button onclick="refreshStatus()">Refresh</button>
+      <button class="btn-secondary" onclick="copySection('statusOutput')">Copy</button>
+      <button class="btn-secondary" onclick="downloadSection('statusOutput', 'status-summary.txt')">Download</button>
+    </div>
+    <pre id="statusOutput">Set context to begin.</pre>
+  </section>
+
+  <section>
+    <h2>AI Settings</h2>
+    <div class="help">Enable the read-only advisor and store the key locally in your browser.</div>
+    <label><input id="aiEnabled" type="checkbox" /> Enable advisor <span class="tooltip" title="Advisor only explains; it never executes or changes anything.">?</span></label>
+    <label>API Key <span class="tooltip" title="Paste your API key to request advisory notes.">?</span>
+      <input id="aiKey" type="password" placeholder="sk-..." />
+    </label>
+    <button onclick="saveAiSettings()">Save</button>
+    <button class="btn-secondary" onclick="clearAiSettings()">Clear</button>
+    <div id="aiSettingsOutput" class="help"></div>
   </section>
 
   <section class="panel-warn">
@@ -781,7 +857,7 @@ def _render_dashboard() -> str:
         <div class="help">Seed export is explicit and never cached.</div>
       </div>
     </div>
-    <pre id="walletOutput"></pre>
+    <pre id="walletOutput">Unlock wallet to continue.</pre>
   </section>
 
   <section>
@@ -789,7 +865,7 @@ def _render_dashboard() -> str:
     <div class="phase-grid">
       <div class="phase-card" id="planSection">
         <h2>Plan</h2>
-        <label>What do you want to do?</label>
+        <label>What do you want to do? <span class="tooltip" title="Pick the intent and the form will adapt to it.">?</span></label>
         <select id="actionType">
           <option>HOLD</option>
           <option>SWAP</option>
@@ -817,14 +893,18 @@ def _render_dashboard() -> str:
         <div class="advanced-fields">
           <label>Snapshot ID <input id="snapshotId" value="snapshot-1" /></label>
           <div class="help">Capital snapshot identifier.</div>
-          <label>Exposures (one per line: ASSET:quantity)
+          <label>Exposures (one per line: ASSET:quantity) <span class="tooltip" title="List each holding and its amount.">?</span>
             <textarea id="exposures" rows="4">USD:1000</textarea>
           </label>
           <div class="help">Define the capital snapshot used for planning.</div>
         </div>
 
         <button onclick="createPlan()">Create Plan</button>
-        <pre id="planOutput"></pre>
+        <pre id="planOutput">Create a plan to simulate outcomes.</pre>
+        <div class="button-row">
+          <button class="btn-secondary" onclick="copySection('planOutput')">Copy</button>
+          <button class="btn-secondary" onclick="downloadSection('planOutput', 'plan.json')">Download</button>
+        </div>
       </div>
 
       <div class="phase-card">
@@ -838,7 +918,22 @@ def _render_dashboard() -> str:
   <section>
     <div class="phase-title">Review</div>
     <h2>Simulation Results</h2>
-    <pre id="simulateOutput"></pre>
+    <pre id="simulateOutput">Simulate before executing.</pre>
+    <div class="button-row">
+      <button class="btn-secondary" onclick="copySection('simulateOutput')">Copy</button>
+      <button class="btn-secondary" onclick="downloadSection('simulateOutput', 'simulation.json')">Download</button>
+    </div>
+  </section>
+
+  <section>
+    <h2>Advisor (Read-Only)</h2>
+    <div class="help">Advisory commentary only. No actions can be triggered here.</div>
+    <div id="advisorConfidence" class="confidence medium">Confidence: Medium</div>
+    <pre id="advisorOutput">Enable advisor to view notes.</pre>
+    <div class="button-row">
+      <button class="btn-secondary" onclick="copySection('advisorOutput')">Copy</button>
+      <button class="btn-secondary" onclick="downloadSection('advisorOutput', 'advisor.txt')">Download</button>
+    </div>
   </section>
 
   <section id="executionSection" class="panel-warn execution-muted">
@@ -846,7 +941,7 @@ def _render_dashboard() -> str:
     <h2>Execution</h2>
     <div class="help">Execution remains gated until mode, arm, and confirmation are all set.</div>
     <div class="row">
-      <label>Mode
+      <label>Mode <span class="tooltip" title="Choose how strictly execution is gated.">?</span>
         <select id="execMode">
           <option value="SAFE">SAFE</option>
           <option value="MANUAL">MANUAL</option>
@@ -861,11 +956,11 @@ def _render_dashboard() -> str:
       </label>
     </div>
     <button onclick="setMode()">Set Mode</button>
-    <label><input id="armed" type="checkbox" /> Armed</label>
+    <label><input id="armed" type="checkbox" /> Armed <span class="tooltip" title="Execution is blocked until armed.">?</span></label>
     <button class="btn-secondary" onclick="setArmed()">Update Arm</button>
     <label><input id="confirmAll" type="checkbox" /> I confirm execution</label>
     <button class="btn-warn" onclick="executePlan()">Execute Last Plan</button>
-    <pre id="executeOutput"></pre>
+    <pre id="executeOutput">Simulate before executing.</pre>
   </section>
 
   <section>
@@ -903,8 +998,11 @@ def _render_dashboard() -> str:
   </script>
   <script>
     let lastPlan = null;
+    let lastSimulation = null;
     let contextReady = false;
     let lastStatus = null;
+    const AI_ENABLED_KEY = 'capitalos-ai-enabled';
+    const AI_KEY_KEY = 'capitalos-ai-key';
 
     function readContext() {
       return {
@@ -939,6 +1037,166 @@ def _render_dashboard() -> str:
 
     function renderOutput(elementId, data) {
       document.getElementById(elementId).textContent = JSON.stringify(data, null, 2);
+    }
+
+    function renderText(elementId, message) {
+      const element = document.getElementById(elementId);
+      if (element) {
+        element.textContent = message;
+      }
+    }
+
+    function copySection(elementId) {
+      const element = document.getElementById(elementId);
+      if (!element) return;
+      const text = element.textContent;
+      if (!text) return;
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text);
+        return;
+      }
+      const textarea = document.createElement('textarea');
+      textarea.value = text;
+      textarea.setAttribute('readonly', 'true');
+      textarea.style.position = 'absolute';
+      textarea.style.left = '-9999px';
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textarea);
+    }
+
+    function downloadSection(elementId, filename) {
+      const element = document.getElementById(elementId);
+      if (!element) return;
+      const text = element.textContent || '';
+      const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    }
+
+    function setAdvisorConfidence(text) {
+      const label = document.getElementById('advisorConfidence');
+      if (!label) return;
+      const message = text || '';
+      const lower = message.toLowerCase();
+      const uncertain = ['uncertain', 'unsure', 'maybe', 'might', 'unknown', 'guess', 'speculate', 'cannot', "can't"];
+      let level = 'medium';
+      if (!message || message.startsWith('Advisor disabled') || message.startsWith('API key') || message.startsWith('Advisor unavailable')) {
+        level = 'low';
+      } else if (uncertain.some(token => lower.includes(token))) {
+        level = 'low';
+      } else if (lower.includes('assumption') || lower.includes('assume')) {
+        level = 'medium';
+      } else if (message.length > 500) {
+        level = 'high';
+      }
+      label.classList.remove('high', 'medium', 'low');
+      label.classList.add(level);
+      label.textContent = 'Confidence: ' + (level === 'high' ? 'High' : level === 'low' ? 'Low' : 'Medium');
+    }
+
+    function loadAiSettings() {
+      const enabledToggle = document.getElementById('aiEnabled');
+      const keyInput = document.getElementById('aiKey');
+      if (!enabledToggle || !keyInput) {
+        return;
+      }
+      try {
+        const enabled = localStorage.getItem(AI_ENABLED_KEY);
+        if (enabled === 'true') {
+          enabledToggle.checked = true;
+        }
+        const savedKey = localStorage.getItem(AI_KEY_KEY);
+        if (savedKey) {
+          keyInput.value = savedKey;
+        }
+      } catch (err) {}
+      updateAdvisor();
+    }
+
+    function saveAiSettings() {
+      const enabledToggle = document.getElementById('aiEnabled');
+      const keyInput = document.getElementById('aiKey');
+      if (!enabledToggle || !keyInput) {
+        return;
+      }
+      try {
+        localStorage.setItem(AI_ENABLED_KEY, enabledToggle.checked ? 'true' : 'false');
+        localStorage.setItem(AI_KEY_KEY, keyInput.value);
+      } catch (err) {}
+      renderText('aiSettingsOutput', 'Saved.');
+      updateAdvisor();
+    }
+
+    function clearAiSettings() {
+      const enabledToggle = document.getElementById('aiEnabled');
+      const keyInput = document.getElementById('aiKey');
+      if (enabledToggle) {
+        enabledToggle.checked = false;
+      }
+      if (keyInput) {
+        keyInput.value = '';
+      }
+      try {
+        localStorage.removeItem(AI_ENABLED_KEY);
+        localStorage.removeItem(AI_KEY_KEY);
+      } catch (err) {}
+      renderText('aiSettingsOutput', 'Cleared.');
+      updateAdvisor();
+    }
+
+    function buildSnapshot() {
+      const snapshotId = document.getElementById('snapshotId');
+      const exposures = document.getElementById('exposures');
+      if (!snapshotId || !exposures) {
+        return null;
+      }
+      return {
+        snapshot_id: snapshotId.value,
+        exposures: parseExposures(),
+      };
+    }
+
+    async function updateAdvisor() {
+      const output = document.getElementById('advisorOutput');
+      const enabledToggle = document.getElementById('aiEnabled');
+      const keyInput = document.getElementById('aiKey');
+      if (!output || !enabledToggle || !keyInput) {
+        return;
+      }
+      if (!enabledToggle.checked) {
+        output.textContent = 'Advisor disabled.';
+        setAdvisorConfidence(output.textContent);
+        return;
+      }
+      if (!keyInput.value) {
+        output.textContent = 'API key required for advisory output.';
+        setAdvisorConfidence(output.textContent);
+        return;
+      }
+      output.textContent = 'Loading advisor...';
+      setAdvisorConfidence(output.textContent);
+      try {
+        const data = await apiPost('/api/advisor', {
+          enabled: enabledToggle.checked,
+          api_key: keyInput.value,
+          plan: lastPlan,
+          simulation: lastSimulation,
+          snapshot: buildSnapshot(),
+        });
+        output.textContent = data.advice || 'No advisory response.';
+        setAdvisorConfidence(output.textContent);
+      } catch (err) {
+        output.textContent = (err && err.error) ? err.error : 'Advisor unavailable.';
+        setAdvisorConfidence(output.textContent);
+      }
     }
 
     async function setContext() {
@@ -1043,6 +1301,7 @@ def _render_dashboard() -> str:
         const data = await apiPost('/api/plans', payload);
         lastPlan = data;
         renderOutput('planOutput', data);
+        updateAdvisor();
       } catch (err) {
         renderOutput('planOutput', err);
       }
@@ -1055,7 +1314,9 @@ def _render_dashboard() -> str:
       }
       try {
         const data = await apiPost('/api/simulate', { plan: lastPlan });
+        lastSimulation = data;
         renderOutput('simulateOutput', data);
+        updateAdvisor();
       } catch (err) {
         renderOutput('simulateOutput', err);
       }
@@ -1211,12 +1472,17 @@ def _render_dashboard() -> str:
       const confirmAll = document.getElementById('confirmAll');
       const execMode = document.getElementById('execMode');
       const armed = document.getElementById('armed');
+      const aiEnabled = document.getElementById('aiEnabled');
+      const aiKey = document.getElementById('aiKey');
       if (actionType) actionType.addEventListener('change', updatePlanFields);
       if (confirmAll) confirmAll.addEventListener('change', updateExecutionState);
       if (execMode) execMode.addEventListener('change', updateExecutionState);
       if (armed) armed.addEventListener('change', updateExecutionState);
+      if (aiEnabled) aiEnabled.addEventListener('change', updateAdvisor);
+      if (aiKey) aiKey.addEventListener('input', updateAdvisor);
       updatePlanFields();
       updateExecutionState();
+      loadAiSettings();
     }
 
     bindUI();

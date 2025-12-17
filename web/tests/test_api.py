@@ -149,6 +149,15 @@ class WebApiTests(unittest.TestCase):
         self.assertEqual(exec_payload["mode"], "MANUAL")
         self.assertTrue(exec_payload["decisions"])
 
+    def test_advisor_disabled(self) -> None:
+        response = self.client.post(
+            "/api/advisor",
+            json={"enabled": False, "api_key": "", "plan": None, "simulation": None, "snapshot": None},
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["status"], "disabled")
+
 
 if __name__ == "__main__":
     unittest.main()
