@@ -1,3 +1,5 @@
+<img width="1024" height="1024" alt="Gemini_Generated_Image_46t8v746t8v746t8" src="https://github.com/user-attachments/assets/6c85ece8-b0db-4d0f-a8f7-1f9dd8433fc2" />
+
 THRIVE
 
 After-Tax Financial Intelligence for Real-World Wealth
