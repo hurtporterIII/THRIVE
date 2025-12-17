@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """Guarded execution policy."""
 
 from dataclasses import dataclass
